@@ -1,0 +1,112 @@
+---
+title: "Project 2 EDA"
+format: html
+---
+# Preprocessing
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+library(RKaggle)
+library(ggthemes)
+library(ggpointdensity)
+library(knitr)
+```
+
+# Read in and Process Data
+```{r}
+raw_df <- RKaggle::get_dataset("valakhorasani/mobile-device-usage-and-user-behavior-dataset") 
+df <- raw_df |> as_tibble() |>
+    rename("ID" = "User ID", "Device" = "Device Model", "OS" = "Operating System",
+             "AppUsage" = "App Usage Time (min/day)", "ScreenTime" = "Screen On Time (hours/day)",
+             "BatteryDrain" = "Battery Drain (mAh/day)", "NumApps" = "Number of Apps Installed",
+             "DataUsage" = "Data Usage (MB/day)", "UserClass" = "User Behavior Class") |>
+    mutate(ScreenTime = ScreenTime*60, UserClass = factor(UserClass))
+```
+
+# Contingency Tables
+```{r}
+options(dplyr.summarise.inform = FALSE)
+df |> group_by(UserClass) |> summarize(count = n()) |> 
+    pivot_wider(names_from = UserClass, values_from = count) |> kable()
+
+df |> group_by(UserClass, Device) |> summarize(count = n()) |>
+    pivot_wider(names_from = UserClass, values_from = count) |> kable()
+
+df |> group_by(UserClass, Gender) |> summarize(count = n()) |>
+    pivot_wider(names_from = UserClass, values_from = count) |> kable()
+
+df |> group_by(Device, Gender) |> summarize(count = n()) |>
+    pivot_wider(names_from = Device, values_from = count) |> kable()
+```
+
+# Numerical Summaries
+```{r}
+summarize_numeric <- function(df, group, num_var) {
+    return(
+    df |> group_by({{group}}) |> summarize("count" = n(), across(all_of(num_var), 
+        list("mean" = mean, "sd" = sd, "IQR" = ~ quantile(., 0.75) - quantile(., 0.25),
+             "range" = ~ max(.) - min(.) , "min" = min,
+             "Q1" = ~ quantile(., 0.25), "median" = median, "Q3" = ~ quantile(., 0.25),
+             "max" = max), .names = "{.col}_{.fn}")) |> kable()
+    )
+}
+
+map(df |> select(!all_of(c("ID", "UserClass")) & where(is.numeric)) |> colnames(),
+    \(x) summarize_numeric(df, Device, x))
+
+map(df |> select(!all_of(c("ID", "UserClass")) & where(is.numeric)) |> colnames(),
+    \(x) summarize_numeric(df, UserClass, x))
+```
+
+# Correlation Matrix
+```{r}
+df |> select(where(is.numeric) & !c("ID")) |> cor() |> kable()
+```
+
+# Scatter Plots
+```{r}
+df |> ggplot(aes(x = AppUsage, y = ScreenTime, color = UserClass)) + geom_point() +
+    labs(x = "App Usage (minutes/day)", y = "Screen Time (minutes/day)",
+         color = "User Behavior Class", title = "Screen Time vs App Usage by User Behavior Class") 
+
+df |> ggplot(aes(x = BatteryDrain, y = NumApps, color = Device)) + geom_point() +
+    labs(x = "Battery Drain (mAh/day)", y = "Number of Apps Installed", color = "Device Model",
+         title = "Battery Drain vs Number of Apps by Device Model") 
+```
+
+# Boxplots
+```{r}
+df |> ggplot(aes(x = UserClass, y = Age)) + geom_boxplot() + facet_grid( ~ Gender) +
+    labs(x = "User Behavior Class", y = "Age (years)",
+         title = "Distriubtion of Age By User Class and Gender")
+
+df |> ggplot(aes(x = Device, y = Age)) + geom_boxplot() + facet_grid( ~ Gender) +
+    labs(x = "Device Model", y = "Age (years)",
+         title = "Distriubtion of Age By Device Model and Gender") +
+    scale_x_discrete(labels = scales::wrap_format(12))
+
+boxplot_numeric <- function(df, group, num_var) {
+    return(
+    df |> ggplot(aes(x = get(group), y = get(num_var))) + geom_boxplot() +
+        labs(x = group, y = num_var, title = paste("Distribution of ", num_var, " by ", group))
+    )
+}
+
+map(df |> select(-c("ID") & where(is.numeric)) |> colnames(),
+    \(x) boxplot_numeric(df, "Device", x))
+map(df |> select(-c("ID") & where(is.numeric)) |> colnames(),
+    \(x) boxplot_numeric(df, "UserClass", x))
+```
+
+# Density Scatter Plots
+```{r}
+df |> ggplot(aes(x = Age, y = ScreenTime, fill = UserClass)) + ggdensity::geom_hdr() +
+    geom_point(shape = 21) + labs(x = "Age (years)", y = "Screen Time (minutes/day)",
+                                  title = "Probabilty Density of Age vs Screentime by User Class")
+df |> ggplot(aes(x = Age, y = ScreenTime, fill = Device)) + ggdensity::geom_hdr() +
+    geom_point(shape = 21) + labs(x = "Age (years)", y = "Screen Time (minutes/day)",
+                                 title = "Probabilty Density of Age vs Screentime by Device Model")
+df |> ggplot(aes(x = Age, y = ScreenTime, fill = Device)) + ggdensity::geom_hdr() +
+    geom_point(shape = 21) + facet_wrap(~ OS, nrow = 2) + 
+    labs(x = "Age (years)",y = "Screen Time (minutes/day)",
+    title = "Probabilty Density of Age vs Screentime by Device and Operating System")
+```
