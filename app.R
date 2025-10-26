@@ -17,25 +17,33 @@ num_vars <- c("App Usage Time" = "App Usage Time (min/day)",
 ui <- fluidPage(
     navset_card_tab(
         sidebar = sidebar("Sidebar",
-            checkboxGroupInput(
+            pickerInput(
                 inputId = "device",
                 label = "Device Model",
-                choices = unique(df$`Device Model`)
+                choices = unique(df$`Device Model`),
+                multiple = TRUE,
+                options = list(`actions-box` = TRUE)
             ),
-            checkboxGroupInput(
+            pickerInput(
                 inputId = "os",
                 label = "Operating System",
-                choices = unique(df$`Operating System`)
+                choices = unique(df$`Operating System`),
+                multiple = TRUE,
+                options = list(`actions-box` = TRUE)
             ),
-            checkboxGroupInput(
+            pickerInput(
                 inputId = "gender",
                 label = "Gender",
-                choices = unique(df$`Gender`)
+                choices = unique(df$`Gender`),
+                multiple = TRUE,
+                options = list(`actions-box` = TRUE)
             ),
-            checkboxGroupInput(
+            pickerInput(
                 inputId = "user_class",
                 label = "User Behavior Class",
-                choices = unique(df$`User Behavior Class`)
+                choices = unique(df$`User Behavior Class`),
+                multiple = TRUE,
+                options = list(`actions-box` = TRUE)
             ),
             pickerInput(
                 inputId = "num_vars",
@@ -94,7 +102,11 @@ ui <- fluidPage(
                     ),
                   img(src = "dataset-cover.jpeg", height = "300px", width = "600px")
                 ),
-        nav_panel("Data Download", "Page 2 content"),
+        nav_panel("Data Download",
+                  div(style = "height:700px",
+                      DT::dataTableOutput("data_table")),
+                  downloadButton("download_csv", "Download CSV"),
+                  ),
         nav_panel("Data Exploration", "Page 3 content")
     ),
 )
@@ -119,17 +131,52 @@ server <- function(input, output, session) {
     subset_data <- reactiveVal(df)
     
     # Observe action button
-    #observeEvent(input$subset, {
-        #req(input$device | input$os | input$os | input$user_class | device$num_vars)
-        # Need to subset data based on variable selection
-        #new_data <- df |>
-        #subset_data(new_data)
-    #})
+    observeEvent(input$subset, {
+        df_temp <- df
+        
+        if (!is.null(input$device) && length(input$device) > 0) {
+            df_temp <- df_temp |> dplyr::filter(`Device Model` %in% input$device)
+        }
+        if (!is.null(input$os) && length(input$os) > 0) {
+            df_temp <- df_temp |> dplyr::filter(`Operating System` %in% input$os)
+        }
+        if (!is.null(input$gender) && length(input$gender) > 0) {
+            df_temp <- df_temp |> dplyr::filter(`Gender` %in% input$gender)
+        }
+        if (!is.null(input$user_class) && length(input$user_class) > 0) {
+            df_temp <- df_temp |> dplyr::filter(`User Behavior Class` %in% input$user_class)
+        }
+        
+        if (!is.null(input$num_vars) && length(input$num_vars) > 0) {
+            for (var in input$num_vars) {
+                rng <- input[[paste0("slider_", var)]]
+                if (!is.null(rng) && length(rng) == 2) {
+                    df_temp <- df_temp |> dplyr::filter(.data[[var]] >= rng[1], .data[[var]] <= rng[2])
+                }
+            }
+        }
+        subset_data(df_temp)
+    })
     
-    # Put output here
-    #output$outputElement <- render*({
-    #    subset_data()
-    #})
+    output$data_table <- DT::renderDataTable({
+        DT::datatable(
+            subset_data(),
+            options = list(
+                autoWidth = TRUE
+            ),
+            rownames = FALSE
+        )
+    })
+    
+    output$download_csv <- downloadHandler(
+        filename = function() {
+            paste0("data-", Sys.Date(), ".csv")
+        },
+        content = function(file) {
+            write.csv(subset_data(), file, row.names = FALSE)
+        }
+    )
+
 }
 
 shinyApp(ui = ui, server = server)
