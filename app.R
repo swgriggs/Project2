@@ -107,7 +107,35 @@ ui <- fluidPage(
                       DT::dataTableOutput("data_table")),
                   downloadButton("download_csv", "Download CSV"),
                   ),
-        nav_panel("Data Exploration", "Page 3 content")
+        nav_panel("Data Exploration",
+                  nav_panel("Data Exploration", navset_card_tab(
+                    nav_panel(id = "contingency", title = "Contingency",
+                              h3("Contingency Tables"),
+                              selectizeInput("cont_vars", "Select up to 2 variables",
+                                  choices = cat_vars, multiple = TRUE,
+                                  options = list(maxItems = 2)
+                              ),
+                              actionButton("reset", "Reset"),
+                              DT::dataTableOutput("cont_table")
+                    ),
+                    nav_panel(id = "num_summary", title = "Summary",
+                              h3("Numeric Summary"),
+                    ),
+                    nav_panel(id = "corr", title = "Correlation",
+                              h3("Correlation Matrix")
+                    ),
+                    nav_panel(id = "scatter", title = "Scatterplot",
+                              h3("Scatterplot")
+                    ),
+                    nav_panel(id = "boxplot", title = "Boxplot",
+                              h3("Boxplot")
+                    ),
+                    nav_panel(id = "dens_scatter", title = "Density",
+                              h3("Density Scatterplot")
+                    )
+                )
+            )
+        )
     ),
 )
 
@@ -176,7 +204,30 @@ server <- function(input, output, session) {
             write.csv(subset_data(), file, row.names = FALSE)
         }
     )
-
+    
+    # Button for resetting contingency tables
+    observeEvent(input$reset, {
+        updateSelectizeInput(session, "cont_vars", selected = character(0))
+        cont_data(data.frame())
+    })
+    
+    cont_data <- reactiveVal(data.frame())
+    
+    observeEvent(input$cont_vars, {
+        if (length(input$cont_vars) == 1) {
+            out <- df |> dplyr::select(input$cont_vars[1]) |> table() |> as.data.frame()
+        } else if (length(input$cont_vars) == 2) {
+            out <- df |> dplyr::select(input$cont_vars[1], input$cont_vars[2]) |> table() |> as.data.frame.matrix()
+        } else {
+            out <- data.frame()
+        }
+        cont_data(out)
+    })
+    
+    output$cont_table <- DT::renderDataTable({
+        DT::datatable(cont_data())
+    })
+    
 }
 
 shinyApp(ui = ui, server = server)
