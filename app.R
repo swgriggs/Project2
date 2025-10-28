@@ -115,14 +115,22 @@ ui <- fluidPage(
                                   choices = cat_vars, multiple = TRUE,
                                   options = list(maxItems = 2)
                               ),
-                              actionButton("reset", "Reset"),
+                              actionButton("reset_cont", "Reset"),
                               DT::dataTableOutput("cont_table")
                     ),
                     nav_panel(id = "num_summary", title = "Summary",
                               h3("Numeric Summary"),
+                              selectizeInput("summ_cat", "Select a categorical variable",
+                                             choices = cat_vars, selected = NULL),
+                              selectizeInput("summ_num", "Select a numeric variable",
+                                             choices = num_vars[num_vars != "Age"], selected = NULL),
+                              actionButton("reset_summ", "Reset"),
+                              actionButton("generate_summ", "Generate Summary"),
+                              DT::dataTableOutput("summ_table")
                     ),
                     nav_panel(id = "corr", title = "Correlation",
-                              h3("Correlation Matrix")
+                              h3("Correlation Matrix"),
+                              tableOutput("corr_table")
                     ),
                     nav_panel(id = "scatter", title = "Scatterplot",
                               h3("Scatterplot")
@@ -206,7 +214,7 @@ server <- function(input, output, session) {
     )
     
     # Button for resetting contingency tables
-    observeEvent(input$reset, {
+    observeEvent(input$reset_cont, {
         updateSelectizeInput(session, "cont_vars", selected = character(0))
         cont_data(data.frame())
     })
@@ -228,6 +236,51 @@ server <- function(input, output, session) {
         DT::datatable(cont_data())
     })
     
+    #Numeric summary handling and output
+    observeEvent(input$reset_summ, {
+        updateSelectizeInput(session, "summ_cat", selected = character(0))
+        updateSelectizeInput(session, "summ_num", selected = character(0))
+        cont_data(data.frame())
+    })
+
+    summ_data <- reactiveVal(data.frame())
+
+    observeEvent(input$generate_summ, {
+        if (length(input$summ_cat) > 0 && length(input$summ_num) > 0) {
+            grp <- input$summ_cat[1]
+            num <- input$summ_num[1]
+            out <- df |>
+                dplyr::group_by(.data[[grp]]) |>
+                dplyr::summarise(
+                    n = dplyr::n(),
+                    mean = mean(.data[[num]]),
+                    sd   = sd(.data[[num]]),
+                    IQR  = IQR(.data[[num]]),
+                    range = max(.data[[num]]) - min(.data[[num]]),
+                    min  = min(.data[[num]]),
+                    Q1   = quantile(.data[[num]], 0.25),
+                    median = median(.data[[num]]),
+                    Q3   = quantile(.data[[num]], 0.75),
+                    max  = max(.data[[num]]),
+                    .groups = "drop"
+                )
+        }
+        else {
+            out <- data.frame()
+        }
+        summ_data(out)
+    })
+
+    output$summ_table <- DT::renderDataTable({
+        DT::datatable(summ_data())
+    })
+    
+    # Correlation Matrix
+    output$corr_table <- renderTable({
+        corr_data <- subset_data()
+        corr_data |> dplyr::select(all_of(num_vars)) |> cor()
+    })
+
 }
 
 shinyApp(ui = ui, server = server)
