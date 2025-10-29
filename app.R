@@ -158,10 +158,40 @@ ui <- fluidPage(
                               )
                     ),
                     nav_panel(id = "boxplot", title = "Boxplot",
-                              h3("Boxplot")
+                              h3("Boxplot"),
+                              fluidRow(column(8,
+                                  selectizeInput("boxplot_num", "Select a numeric variable",
+                                                 choices = num_vars, selected = character(0)),
+                                  selectizeInput("boxplot_cat", "Select a categorical variable (and
+                                                 a facetting varible if needed)", choices = cat_vars,
+                                                 selected = character(0), multiple = TRUE,
+                                                 options = list(maxItems = 2))
+                              ),
+                              column(4,actionButton("reset_boxplot", "Reset"),
+                                     actionButton("boxplot_button", "Generate Boxplot"))
+                              ),
+                              fluidRow(
+                                  column(12, plotOutput("boxplot_output", height = "600px"))
+                              )
                     ),
                     nav_panel(id = "dens_scatter", title = "Density",
-                              h3("Density Scatterplot")
+                              h3("Density Scatterplot"),
+                              fluidRow(column(7,
+                                  selectizeInput("density_num", "Select 2 numeric variables",
+                                                 choices = num_vars, multiple = TRUE,
+                                                 options = list(maxItems = 2)),
+                                  selectizeInput("density_cat", "Select a categorical variable (and
+                                                 a facetting varible if needed)",
+                                                 choices = cat_vars, multiple = TRUE,
+                                                 options = list(maxItems = 2)
+                              ),
+                              column(5,actionButton("reset_density", "Reset"),
+                                     actionButton("density_button", "Generate Plot"))
+                              ),
+                              fluidRow(
+                                  column(12, plotOutput("density_plot", height = "600px"))
+                              )
+                        )
                     )
                 )
             )
@@ -170,6 +200,8 @@ ui <- fluidPage(
 )
 
 server <- function(input, output, session) {
+    
+    # Dynamic sliders for subsetting ranges of numeric variables
     output$num_sliders <- renderUI({
         req(input$num_vars)
         sliders <- lapply(input$num_vars, function(var) {
@@ -185,10 +217,11 @@ server <- function(input, output, session) {
         })
         do.call(tagList, sliders)
     })
+    
     # Subsetted data
     subset_data <- reactiveVal(df)
     
-    # Observe action button
+    # Subset action button
     observeEvent(input$subset, {
         df_temp <- df
         
@@ -216,6 +249,7 @@ server <- function(input, output, session) {
         subset_data(df_temp)
     })
     
+    # Data table for viewing subsetted data
     output$data_table <- DT::renderDataTable({
         DT::datatable(
             subset_data(),
@@ -226,6 +260,7 @@ server <- function(input, output, session) {
         )
     })
     
+    # Download button and handler for subsetted data
     output$download_csv <- downloadHandler(
         filename = function() {
             paste0("data-", Sys.Date(), ".csv")
@@ -330,7 +365,78 @@ server <- function(input, output, session) {
     output$scatter_plot <- renderPlot({
         scatter_data()
     })
-
+    
+    # Boxplot
+    boxplot_data <- reactiveVal(NULL)
+    
+    observeEvent(input$reset_boxplot, {
+        updateSelectizeInput(session, "boxplot_num", selected = character(0))
+        updateSelectizeInput(session, "boxplot_cat", selected = character(0))
+        boxplot_data(NULL)
+    })
+    
+    observeEvent(input$boxplot_button, {
+        if (length(input$boxplot_num) == 1 && length(input$boxplot_cat) >= 1) {
+            xvar <- input$boxplot_cat[1]
+            yvar <- input$boxplot_num[1]
+            
+            title <- paste0("Distribution of ", xvar, " by ", yvar)
+            
+            plt <- subset_data() |> ggplot2::ggplot(ggplot2::aes(x = .data[[xvar]], y = .data[[yvar]])) + 
+                ggplot2::geom_boxplot() + ggplot2::labs(title = title)
+            
+            if (length(input$boxplot_cat) == 2) {
+                facetvar <- input$boxplot_cat[2]
+                plt <- plt + ggplot2::facet_wrap(~ .data[[facetvar]])
+            }
+            
+            out <- plt
+        } else {
+            out <- NULL
+        }
+        boxplot_data(out)
+    })
+    
+    output$boxplot_output <- renderPlot({
+        boxplot_data()
+    })
+    
+    # Scatter Density Plot
+    density_data <- reactiveVal(NULL)
+    
+    observeEvent(input$reset_density, {
+        updateSelectizeInput(session, "density_num", selected = character(0))
+        updateSelectizeInput(session, "density_cat", selected = character(0))
+        density_data(NULL)
+    })
+    
+    observeEvent(input$density_button, {
+        if (length(input$density_num) == 2 && length(input$density_cat) >= 1) {
+            xvar <- input$density_num[1]
+            yvar <- input$density_num[2]
+            catvar <- input$density_cat[1]
+            title <- paste0("Probablity Density of ", xvar, " vs ", yvar, " by ", catvar)
+            
+            plt <- subset_data() |> ggplot2::ggplot(
+                ggplot2::aes(x = .data[[xvar]], y = .data[[yvar]], fill = .data[[catvar]])) +
+                ggdensity::geom_hdr() + ggplot2::geom_point(shape = 21) + ggplot2::labs()
+            
+            if (length(input$density_cat) == 2) {
+                facetvar <- input$density_cat[2]
+                plt <- plt + ggplot2::facet_wrap(~ .data[[facetvar]])
+            }
+            
+            out <- plt
+        }
+        else {
+            out <- NULL
+        }
+        density_data(out)
+    })
+    
+    output$density_plot <- renderPlot({
+        density_data()
+    })
 }
 
 shinyApp(ui = ui, server = server)
