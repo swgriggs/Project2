@@ -419,7 +419,8 @@ server <- function(input, output, session) {
             
             plt <- subset_data() |> ggplot2::ggplot(
                 ggplot2::aes(x = .data[[xvar]], y = .data[[yvar]], fill = .data[[catvar]])) +
-                ggdensity::geom_hdr() + ggplot2::geom_point(shape = 21) + ggplot2::labs()
+                ggdensity::geom_hdr() + ggplot2::geom_point(shape = 21) +
+                ggplot2::labs(title = title)
             
             if (length(input$density_cat) == 2) {
                 facetvar <- input$density_cat[2]
