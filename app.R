@@ -111,21 +111,30 @@ ui <- fluidPage(
                   nav_panel("Data Exploration", navset_card_tab(
                     nav_panel(id = "contingency", title = "Contingency",
                               h3("Contingency Tables"),
-                              selectizeInput("cont_vars", "Select up to 2 variables",
-                                  choices = cat_vars, multiple = TRUE,
-                                  options = list(maxItems = 2)
+                              fluidRow(column(width = 8,
+                                 selectizeInput("cont_vars", "Select up to 2 variables",
+                                                choices = cat_vars, multiple = TRUE,
+                                                options = list(maxItems = 2))),
+                                  column(width = 4,
+                                         actionButton("reset_cont", "Reset"),
+                                         actionButton("cont_button", "Generate Table")
+                                  )
                               ),
-                              actionButton("reset_cont", "Reset"),
                               DT::dataTableOutput("cont_table")
                     ),
                     nav_panel(id = "num_summary", title = "Summary",
                               h3("Numeric Summary"),
-                              selectizeInput("summ_cat", "Select a categorical variable",
-                                             choices = cat_vars, selected = NULL),
-                              selectizeInput("summ_num", "Select a numeric variable",
-                                             choices = num_vars[num_vars != "Age"], selected = NULL),
-                              actionButton("reset_summ", "Reset"),
-                              actionButton("generate_summ", "Generate Summary"),
+                              fluidRow(column(width = 8,
+                                      selectizeInput("summ_cat", "Select a categorical variable",
+                                                     choices = cat_vars, selected = character(0)),
+                                      selectizeInput("summ_num", "Select a numeric variable",
+                                                     choices = num_vars, selected = character(0))
+                                  ),
+                                  column(width = 4,
+                                      actionButton("reset_summ", "Reset"),
+                                      actionButton("summ_button", "Generate Summary")
+                                  )
+                              ),
                               DT::dataTableOutput("summ_table")
                     ),
                     nav_panel(id = "corr", title = "Correlation",
@@ -133,7 +142,20 @@ ui <- fluidPage(
                               tableOutput("corr_table")
                     ),
                     nav_panel(id = "scatter", title = "Scatterplot",
-                              h3("Scatterplot")
+                              h3("Scatterplot"),
+                              fluidRow(column(8,
+                                 selectizeInput("scatter_num", "Select 2 numeric variables",
+                                                choices = num_vars, multiple = TRUE,
+                                                options = list(maxItems = 2)),
+                                 selectizeInput("scatter_cat", "Select a categorical variable",
+                                                choices = cat_vars, selected = character(0))
+                                 ),
+                                 column(4,actionButton("reset_scatter", "Reset"),
+                                        actionButton("scatter_button", "Generate Plot"))
+                              ),
+                              fluidRow(
+                                  column(12, plotOutput("scatter_plot", height = "600px"))
+                              )
                     ),
                     nav_panel(id = "boxplot", title = "Boxplot",
                               h3("Boxplot")
@@ -213,7 +235,7 @@ server <- function(input, output, session) {
         }
     )
     
-    # Button for resetting contingency tables
+    # Contingency table
     observeEvent(input$reset_cont, {
         updateSelectizeInput(session, "cont_vars", selected = character(0))
         cont_data(data.frame())
@@ -221,11 +243,11 @@ server <- function(input, output, session) {
     
     cont_data <- reactiveVal(data.frame())
     
-    observeEvent(input$cont_vars, {
+    observeEvent(input$cont_button, {
         if (length(input$cont_vars) == 1) {
-            out <- df |> dplyr::select(input$cont_vars[1]) |> table() |> as.data.frame()
+            out <- subset_data() |> dplyr::select(input$cont_vars[1]) |> table() |> as.data.frame()
         } else if (length(input$cont_vars) == 2) {
-            out <- df |> dplyr::select(input$cont_vars[1], input$cont_vars[2]) |> table() |> as.data.frame.matrix()
+            out <- subset_data() |> dplyr::select(input$cont_vars[1], input$cont_vars[2]) |> table() |> as.data.frame.matrix()
         } else {
             out <- data.frame()
         }
@@ -236,20 +258,20 @@ server <- function(input, output, session) {
         DT::datatable(cont_data())
     })
     
-    #Numeric summary handling and output
+    # Numeric summary handling and output
     observeEvent(input$reset_summ, {
         updateSelectizeInput(session, "summ_cat", selected = character(0))
         updateSelectizeInput(session, "summ_num", selected = character(0))
-        cont_data(data.frame())
+        summ_data(data.frame())
     })
 
     summ_data <- reactiveVal(data.frame())
 
-    observeEvent(input$generate_summ, {
+    observeEvent(input$summ_button, {
         if (length(input$summ_cat) > 0 && length(input$summ_num) > 0) {
             grp <- input$summ_cat[1]
             num <- input$summ_num[1]
-            out <- df |>
+            out <- subset_data() |>
                 dplyr::group_by(.data[[grp]]) |>
                 dplyr::summarise(
                     n = dplyr::n(),
@@ -277,8 +299,36 @@ server <- function(input, output, session) {
     
     # Correlation Matrix
     output$corr_table <- renderTable({
-        corr_data <- subset_data()
-        corr_data |> dplyr::select(all_of(num_vars)) |> cor()
+        subset_data() |> dplyr::select(all_of(num_vars)) |> cor()
+    })
+    
+    # Scatter plot
+    scatter_data <- reactiveVal(NULL)
+    
+    observeEvent(input$reset_scatter, {
+        updateSelectizeInput(session, "scatter_num", selected = character(0))
+        updateSelectizeInput(session, "scatter_cat", selected = character(0))
+        scatter_data(NULL)
+    })
+    
+    observeEvent(input$scatter_button, {
+        if (length(input$scatter_num) == 2 && length(input$scatter_cat) == 1) {
+            xvar <- input$scatter_num[1]
+            yvar <- input$scatter_num[2]
+            catvar <- input$scatter_cat[1]
+            title <- paste0(xvar, " vs ", yvar, " by ", catvar)
+            
+            out <- subset_data() |> ggplot2::ggplot(ggplot2::aes(x = .data[[xvar]], y = .data[[yvar]],
+                    color = .data[[catvar]])) + ggplot2::geom_point() + ggplot2::labs(title = title)
+        }
+        else {
+            out <- NULL
+        }
+        scatter_data(out)
+    })
+    
+    output$scatter_plot <- renderPlot({
+        scatter_data()
     })
 
 }
